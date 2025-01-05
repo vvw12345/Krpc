@@ -1,5 +1,31 @@
 # Krpc
-【代码随想录知识星球】项目分享-手撕RPC框架（CPP）
+
+Remote Procedure call……
+
+原项目：https://github.com/youngyangyang04/Krpc
+
+# 项目理论
+
+## 序列化技术
+
+
+
+## Glog
+
+支持四种日志级别：Info,Warning,Error,Fatal
+
+```c
+FLAGS_minloglevel = 1; // 只输出WARNING及以上级别的日志
+FLAGS_log_dir = "/path/to/log_directory"; // 日志存放目录
+FLAGS_max_log_size = 1024 // 单个日志最大大小
+    
+日志一开始是放在内存里面的 只有到一定大小之后才会放进磁盘
+FLAGS_logbuflevel = -1; // 禁用日志级别缓冲
+FLAGS_logbufsecs = 5;   // 设置写入磁盘的时间间隔为5秒
+```
+
+
+
 # 项目概述
 本项目基于protobuf的c++分布式网络通信框架，使用了zookeeper作为服务中间件，负责解决在分布式服务部署中 服务的发布与调用、消息的序列与反序列化、网络包的收发等问题，使其能提供高并发的远程函数调用服务，可以让使用者专注于业务，快速实现微服务的分布式部署，项目会继续完善的欢迎，大家一起学习。
 ## 运行环境
