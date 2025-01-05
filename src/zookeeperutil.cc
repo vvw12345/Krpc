@@ -7,16 +7,25 @@ std::mutex cv_mutex;        // 全局锁
 std::condition_variable cv; // 信号量
 bool is_connected = false;
 // 全局的watcher观察器，zkserver给zkclient的通知
+/*
+zhandle_t *zh: 指向ZooKeeper会话句柄的指针，代表当前会话。
+int type: 事件类型。在这个例子中，主要关注的是ZOO_SESSION_EVENT，即会话事件。
+int status: 事件的状态。对于会话事件，状态可以是连接状态，如ZOO_CONNECTED_STATE（连接成功）、ZOO_EXPIRED_SESSION_STATE（会话过期）等。
+const char *path: 对于非会话事件（如节点创建、删除、数据变化等），这个参数表示相关ZooKeeper路径。对于会话事件，这个参数通常不用。
+void *watcherCtx: 回调上下文，是用户在设置监视器时传递的上下文信息，可以用于区分不同的监视器回调。
+*/
 void global_watcher(zhandle_t *zh, int type, int status, const char *path, void *watcherCtx)
 {
     if (type == ZOO_SESSION_EVENT) // 回调消息类型和会话相关的消息类型
     {
         if (status == ZOO_CONNECTED_STATE) // zkclient和zkserver连接成功
-        {
-            std::lock_guard<std::mutex> lock(cv_mutex); // 加锁保护
+        {   
+            // cv_mutex是一个互斥锁，用于保护共享资源is_connected(一个布尔变量，表示ZooKeeper客户端的连接状态)
+            std::lock_guard<std::mutex> lock(cv_mutex); // 加锁保护  
             is_connected = true;
         }
     }
+    // 调用cv.notify_all()来通知所有等待在条件变量cv上的线程
     cv.notify_all();
 }
 ZkClient::ZkClient() : m_zhandle(nullptr)

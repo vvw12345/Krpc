@@ -4,6 +4,10 @@
 #include <iostream>
 
 /// 这个函数用于注册服务对象和其对应的 RPC 方法，以便服务端处理客户端的请求。
+/* 首先读出该服务的名称service.name
+   其次读出对应的方法service.method  可能有多个 将其同一保存到一个hash表里面去
+   最后用ervice.name和这个hash表对应起来
+*/
 void KrpcProvider::NotifyService(google::protobuf::Service *service)
 {
 
@@ -51,11 +55,16 @@ void KrpcProvider::Run()
     // 使用muduo网络库，创建address对象
     muduo::net::InetAddress address(ip, port);
 
-    // 创建tcpserver对戏
+    // 创建tcpserver
     std::shared_ptr<muduo::net::TcpServer> server = std::make_shared<muduo::net::TcpServer>(&event_loop, address, "KrpcProvider");
 
-    // 绑定连接回调和消息会回调，分离了网络连接业务和消息处理业务
+    // 绑定连接回调和消息会调，分离了网络连接业务和消息处理业务
+    // 连接回调是在网络连接成功/失败 触发的回调函数
+    // 消息回调是在事件发生之前或之后，向客户的应用服务器发送请求，应用服务器可以据此进行必要的数据同步或根据业务需求干预事件的后续处理流程
     server->setConnectionCallback(std::bind(&KrpcProvider::OnConnection, this, std::placeholders::_1));
+    /* std::bind用于创建一个新的可调用对象，这里它将KrpcProvider类的成员函数OnConnection绑定到当前对象（this）上。
+       std::placeholders::_1是一个占位符，表示回调函数的第一个参数。当连接回调函数被调用时，这个占位符将被实际的连接事件参数替换。
+    */
     server->setMessageCallback(std::bind(&KrpcProvider::OnMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     // 设置muduo库的线程数量
@@ -65,27 +74,32 @@ void KrpcProvider::Run()
     ZkClient zkclient;
     zkclient.Start();
     // service_name为永久节点，method_name为临时节点
+    /*
+        前面的KrpcProvider::NotifyService方法已经将service_name和method_name都存在hash表里面了
+        这里通过遍历hash表，在ZK上将所有方法放进去
+    */
     for (auto &sp : service_map)
     {
         // service_name 在zk中的目录下是"/"+service_name
         std::string service_path = "/" + sp.first;
         zkclient.Create(service_path.c_str(), nullptr, 0);
-        for (auto &mp : sp.second.method_map)
+        for (auto &mp : sp.second.method_map) // 这里的method_map是service_name对应的method_name哈希表
         {
-            std::string method_path = service_path + "/" + mp.first;
+            std::string method_path = service_path + "/" + mp.first; // 每一个方法也有一个目录 目录里面应该存放方法对应的数据(如ip和port)
             char method_path_data[128] = {0};
             sprintf(method_path_data, "%s:%d", ip.c_str(), port); // 打印ip和端口
             // ZOO_EPHEMERAL表示这个节点是临时节点，在客户端断开连接后，zk会自动删除这个节点
             zkclient.Create(method_path.c_str(), method_path_data, strlen(method_path_data), ZOO_EPHEMERAL);
         }
     }
-    // rpc服务端准备启动，打印信息
+    // rpc服务端准备启动，打印信息   这里的ip和port是服务器的ip和端口
     std::cout << "RpcProvider start service at ip:" << ip << " port:" << port << std::endl;
     // 启动网络服务
     server->start();
     event_loop.loop();
 }
 
+// 连接回调
 void KrpcProvider::OnConnection(const muduo::net::TcpConnectionPtr &conn)
 {
     if (!conn->connected())
@@ -93,8 +107,9 @@ void KrpcProvider::OnConnection(const muduo::net::TcpConnectionPtr &conn)
         conn->shutdown();
     }
 }
+// 消息回调
 // 在框架内部,RpcProvider和Rpcconsumer之间协商好通信使用的的protobuf的数据类型。
-// 已建立连接用户的读写事件回调 如果远程有一共rpc服务的调用请求，那么OnMessage方法就会响应。
+// 已建立连接用户的读写事件回调 如果远程有rpc服务的调用请求，那么OnMessage方法就会响应。
 // 一般的主要格式是header_size(4个字节)+header_str+arg_str 一般来说header_str是服务对象和服务对象中的方法，arg服务器对象方法设置的参数。
 
 void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::net::Buffer *buffer, muduo::Timestamp receive_time)
@@ -137,8 +152,8 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
     std::cout << "============================================" << std::endl;
 
     // 获取service对象和method对象
-    auto it = service_map.find(service_name);
-    if (it == service_map.end())
+    auto it = service_map.find(service_name); // 消息反序列化得到的service_name和ZK上已经注册的service_name比对一下
+    if (it == service_map.end())              // 如果有则调取对应的服务
     {
         std::cout << service_name << "is not exist!" << std::endl;
         return;
@@ -177,7 +192,7 @@ void KrpcProvider::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::ne
 void KrpcProvider::SendRpcResponse(const muduo::net::TcpConnectionPtr &conn, google::protobuf::Message *response)
 {
     std::string response_str;
-    if (response->SerializeToString(&response_str))
+    if (response->SerializeToString(&response_str)) //SerializeToString是Protobuf提供的消息序列化方法 这里调用将response消息序列化
     {
         // 序列化成功，通过网络把rpc方法执行的结果返回给rpc的调用方
         conn->send(response_str);
